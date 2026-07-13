@@ -6,6 +6,27 @@ import datetime
 import asyncio
 import json
 import shutil
+from supabase import create_client, Client
+from flask import Flask
+from threading import Thread
+
+# サーバー機能の作成
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run():
+    app.run(host='0.0.0.0', port=8000)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 profiles = {}
 active_trials = {} # これを追加
@@ -18,36 +39,39 @@ DATA_FILE = os.path.join(BASE_DIR, 'my_bot_data.json')
 # --- 修正版: 読み込みと保存のセット ---
 
 def load_data():
-    global profiles, room_counter, active_trials # active_trials も読み込む
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                raw_data = json.load(f)
-                profiles = raw_data.get("profiles", {})
-                room_counter = raw_data.get("system", {}).get("room_counter", 1)
-                active_trials = raw_data.get("active_trials", {}) # ここを追加
-        except:
-            profiles, room_counter, active_trials = {}, 1, {}
-    else:
+    global profiles, room_counter, active_trials
+    try:
+        # profilesテーブルから全データを取得して辞書に戻す
+        res = supabase.table("profiles").select("*").execute()
+        profiles = {item['user_id']: item['data'] for item in res.data}
+
+        trial_res = supabase.table("active_trials").select("*").execute()
+        active_trials = {item['txt_id']: item['data'] for item in trial_res.data}
+        
+        # systemテーブルからroom_counterを取得
+        sys_res = supabase.table("system").select("value").eq("key", "room_counter").execute()
+        room_counter = sys_res.data[0]['value'] if sys_res.data else 1
+        
+        # active_trials は必要に応じて同様に実装
+    except Exception as e:
+        print(f"⚠️ DB読み込みエラー: {e}")
         profiles, room_counter, active_trials = {}, 1, {}
+    return profiles
 
 
 def save_data():
-    global profiles, room_counter
-    data_to_save = {
-        "profiles": profiles,
-        "system": {"room_counter": room_counter}
-    }
+    global profiles, room_counter, active_trials
     
-    temp_filename = DATA_FILE + ".tmp"
-    try:
-        # data_to_save を書き込む
-        with open(temp_filename, "w", encoding='utf-8') as f:
-            json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-        # 一時ファイルを本物のファイルに入れ替える
-        os.replace(temp_filename, DATA_FILE)
-    except Exception as e:
-        print(f"⚠️ 保存エラー: {e}")
+    # 1. profiles の保存
+    for u_id, data in profiles.items():
+        supabase.table("profiles").upsert({"user_id": str(u_id), "data": data}).execute()
+    
+    # 2. active_trials の保存
+    for txt_id, data in active_trials.items():
+        supabase.table("active_trials").upsert({"txt_id": str(txt_id), "data": data}).execute()
+    
+    # 3. room_counter の保存
+    supabase.table("system").upsert({"key": "room_counter", "value": room_counter}).execute()
 
 # --- 2. データの読み込み ---
 load_data() # 関数を定義した後に呼び出す
@@ -66,7 +90,9 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-TOKEN = 'MTQ5NTc4NzcxODY3NTAwNTU0MQ.GWIFew.CBU6JkrqK0UFDl2K-6SfmhHwMv0Y43Dh23dw_c'
+keep_alive()
+
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 async def delayed_delete(msg_list, delay):
     await asyncio.sleep(delay)
@@ -519,7 +545,7 @@ class JudgementView(discord.ui.View):
         u_id = str(self.target_user_id)
         if u_id in data:
             data[u_id]["report_count"] = 5
-            save_data(data)
+            save_data()
 
         # ★ロール整理と付与
         if member:
@@ -560,7 +586,8 @@ class JudgementView(discord.ui.View):
             current_points = data[u_id].get("report_count", 5)
             new_points = max(0, current_points - 2)
             data[u_id]["report_count"] = new_points
-            save_data(data)
+            save_data()
+            
         else:
             new_points = 3
 
@@ -850,9 +877,10 @@ async def report_count(it: discord.Interaction, user: discord.Member, points: in
     YOUR_USER_ID = 968461296334929973
 
     user_id = str(user.id)
-    data = load_data()
-    if user_id not in data:
-        data[user_id] = {"profile": {}, "report_count": 0, "report_reasons": []}
+    load_data() # まず最新状態を読み込む
+    if str(user.id) not in profiles:
+        profiles[str(user.id)] = {"report_count": 0, "report_reasons": []}
+# その後、profiles を直接操作する
     
     if "report_reasons" not in data[user_id]:
         data[user_id]["report_reasons"] = []
@@ -862,7 +890,8 @@ async def report_count(it: discord.Interaction, user: discord.Member, points: in
     
     now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     data[user_id]["report_reasons"].append(f"[{now_str}] +{points}点: {reason}")
-    save_data(data)
+    save_data()
+    
 
     role_warn1 = discord.utils.get(it.guild.roles, name="通報1回")
     role_warn2 = discord.utils.get(it.guild.roles, name="通報2回")
@@ -969,7 +998,8 @@ async def report_reset(it: discord.Interaction, user: discord.Member, reason: st
     if user_id in data:
         data[user_id]["report_count"] = 0
         data[user_id]["report_reasons"] = []
-        save_data(data)
+        save_data()
+        
 
     role_warn1 = discord.utils.get(it.guild.roles, name="通報1回")
     role_warn2 = discord.utils.get(it.guild.roles, name="通報2回")
