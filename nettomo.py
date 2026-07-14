@@ -309,6 +309,20 @@ class RecruitView(ui.View):
         start_embed = discord.Embed(title="✨ 交流ルームが作成されました！", color=0x3498db)
         await txt.send(content=f"{it.guild.get_member(self.author_id).mention} {it.user.mention}", embed=start_embed, view=RoomControlView(txt.id, vc.id))
 
+        rule_embed = discord.Embed(
+            title="📜 交流ルームのルール", 
+            description=(
+                "気持ちよく交流するために、以下のルールを守りましょう。\n\n"
+                "1. **暴言・誹謗中傷は禁止**です。\n"
+                "2. **個人情報の取り扱いに注意**してください。\n"
+                "3. **個人のDMはトラブル防止のため禁止**としています。\n"
+                "4. 相手への敬意と配慮を忘れないようにしましょう。\n\n"
+                "何かトラブルがあった場合は、下の「運営を呼ぶ」ボタンを押してください。"
+            ), 
+            color=0xf1c40f
+        )
+        await txt.send(embed=rule_embed)
+
         # 8. 最終処理（メッセージ削除 or 完了通知）
         if len(self.joined_users) >= self.target_num:
             try: 
@@ -675,8 +689,26 @@ async def setup_hook():
     
     print("✨ 永続ボタンとコマンドを同期し、データを読み込みました")
 
+@tasks.loop(hours=6)
+async def cleanup_recruit_board():
+    channel = bot.get_channel(RECRUIT_CH_ID)
+    if not channel: 
+        return
+    
+    now = datetime.datetime.now(datetime.timezone.utc)
+    async for message in channel.history(limit=100):
+        if message.author == bot.user and (now - message.created_at).total_seconds() > 259200:
+            try:
+                await message.delete()
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"⚠️ 削除エラー: {e}")
+
 @bot.event
 async def on_ready():
+    cleanup_recruit_board.start() # ★これを忘れないように！
+    print(f"Logged in as {bot.user}")
+    print("✅ 掲示板自動クリーンアップタスクを開始しました")
     # load_data() は setup_hook に移動したので不要
     print(f"✨ {bot.user} が起動しました！")
     await bot.change_presence(activity=discord.Game(name="募集の管理中..."))
