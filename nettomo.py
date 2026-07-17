@@ -916,14 +916,14 @@ async def setup_r(it: discord.Interaction):
     app_commands.Choice(name="5ポイント（一発アウト・即判決対象）", value=5)
 ])
 async def report_count(it: discord.Interaction, user: discord.Member, points: int = 1, reason: str = "理由の記載なし"):
-    # ... (前略)
+    # ★重要：処理に時間がかかるため、先に「考え中」の応答を送る
+    await it.response.defer(ephemeral=False)
     
+    YOUR_USER_ID = 968461296334929973
     user_id = str(user.id)
-    load_data() # 最新データを読み込む
+    load_data() 
     
-    # ★ここが重要：profilesをdataという変数に代入する
     data = profiles 
-    
     if user_id not in data:
         data[user_id] = {"report_count": 0, "report_reasons": []}
     
@@ -936,12 +936,11 @@ async def report_count(it: discord.Interaction, user: discord.Member, points: in
     data[user_id]["report_reasons"].append(f"[{now_str}] +{points}点: {reason}")
     save_data()
     
-
+    # (中略: ロール処理・DM送信処理はそのまま)
     role_warn1 = discord.utils.get(it.guild.roles, name="通報1回")
     role_warn2 = discord.utils.get(it.guild.roles, name="通報2回")
     role_warn3 = discord.utils.get(it.guild.roles, name="通報3回")
     role_warn4 = discord.utils.get(it.guild.roles, name="通報4回")
-
     roles_to_remove = [r for r in [role_warn1, role_warn2, role_warn3, role_warn4] if r and r in user.roles]
     if roles_to_remove:
         await user.remove_roles(*roles_to_remove)
@@ -995,7 +994,7 @@ async def report_count(it: discord.Interaction, user: discord.Member, points: in
         if not user_dm_sent:
             footer_text += "\n⚠️ 対象ユーザーがDMを閉じているため、本人への警告通知は届きませんでした。"
         warn_embed.set_footer(text=footer_text)
-        await it.response.send_message(embed=warn_embed)
+        await it.followup.send(embed=warn_embed)
 
     else:
         target_role = None
@@ -1027,7 +1026,7 @@ async def report_count(it: discord.Interaction, user: discord.Member, points: in
         if not user_dm_sent:
             footer_text += "\n⚠️ 対象ユーザーがDMを閉じているため、本人への警告通知は届きませんでした。"
         warn_embed.set_footer(text=footer_text)
-        await it.response.send_message(embed=warn_embed)
+        await it.followup.send(embed=warn_embed)
 
 @bot.tree.command(name="report_reset", description="管理用：指定したユーザーの違反ポイントと通報ロールを完全にリセットします")
 @app_commands.checks.has_permissions(administrator=True)
