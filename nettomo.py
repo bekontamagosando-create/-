@@ -697,7 +697,7 @@ async def cleanup_recruit_board():
     
     now = datetime.datetime.now(datetime.timezone.utc)
     async for message in channel.history(limit=100):
-        if message.author == bot.user and (now - message.created_at).total_seconds() > 259200:
+        if message.author == bot.user and (now - message.created_at).total_seconds() > 60:
             try:
                 await message.delete()
                 await asyncio.sleep(1)
