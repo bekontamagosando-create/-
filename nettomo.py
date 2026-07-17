@@ -916,17 +916,19 @@ async def setup_r(it: discord.Interaction):
     app_commands.Choice(name="5ポイント（一発アウト・即判決対象）", value=5)
 ])
 async def report_count(it: discord.Interaction, user: discord.Member, points: int = 1, reason: str = "理由の記載なし"):
-    YOUR_USER_ID = 968461296334929973
-
+    # ... (前略)
+    
     user_id = str(user.id)
-    load_data() # まず最新状態を読み込む
-    if str(user.id) not in profiles:
-        profiles[str(user.id)] = {"report_count": 0, "report_reasons": []}
-# その後、profiles を直接操作する
+    load_data() # 最新データを読み込む
+    
+    # ★ここが重要：profilesをdataという変数に代入する
+    data = profiles 
+    
+    if user_id not in data:
+        data[user_id] = {"report_count": 0, "report_reasons": []}
     
     if "report_reasons" not in data[user_id]:
         data[user_id]["report_reasons"] = []
-
     data[user_id]["report_count"] = data[user_id].get("report_count", 0) + points
     count = data[user_id]["report_count"]
     
