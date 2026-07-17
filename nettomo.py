@@ -689,17 +689,27 @@ async def setup_hook():
     
     print("✨ 永続ボタンとコマンドを同期し、データを読み込みました")
 
-@tasks.loop(hours=6)
+# 修正したタスク部分
+@tasks.loop(minutes=5) # テストのために短くしました
 async def cleanup_recruit_board():
-    channel = bot.get_channel(RECRUIT_CH_ID)
-    if not channel: 
-        return
+    # IDを明示的に整数として扱う
+    channel = bot.get_channel(int(RECRUIT_CH_ID))
     
+    # ログ出力（Renderのログを見てください）
+    if not channel:
+        print(f"DEBUG: チャンネルが見つかりません。ID: {RECRUIT_CH_ID}")
+        return
+    else:
+        print(f"DEBUG: 掲示板チャンネル取得成功: {channel.name}")
+
     now = datetime.datetime.now(datetime.timezone.utc)
-    async for message in channel.history(limit=100):
+    # 古いメッセージを確実に取得するため、limit=None でループ
+    async for message in channel.history(limit=None):
+        # 60秒以上経過したBotのメッセージを削除
         if message.author == bot.user and (now - message.created_at).total_seconds() > 60:
             try:
                 await message.delete()
+                print(f"🧹 削除成功: {message.id}")
                 await asyncio.sleep(1)
             except Exception as e:
                 print(f"⚠️ 削除エラー: {e}")
