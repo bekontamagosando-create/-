@@ -706,7 +706,7 @@ async def cleanup_recruit_board():
     # 古いメッセージを確実に取得するため、limit=None でループ
     async for message in channel.history(limit=None):
         # 60秒以上経過したBotのメッセージを削除
-        if message.author == bot.user and (now - message.created_at).total_seconds() > 60:
+        if message.author == bot.user and (now - message.created_at).total_seconds() > 259200:
             try:
                 await message.delete()
                 print(f"🧹 削除成功: {message.id}")
