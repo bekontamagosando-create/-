@@ -177,29 +177,20 @@ class AgreeView(ui.View):
             await it.response.send_message("✅ 同意が完了しました！チャンネルが解放されます。", ephemeral=True)
 
 class RecruitView(ui.View):
-    # 1. timeout=None を明示する
     def __init__(self, author_id: int = 0, target_num: int = 0):
         super().__init__(timeout=None) 
         self.author_id = author_id
         self.target_num = target_num
         self.joined_users = []
 
-        # 2. すべてのボタンに custom_id を設定する
-        # (すでに設定済みかもしれませんが、念のため)
-        for item in self.children:
-            if isinstance(item, ui.Button):
-                if item.label == "挨拶してみる":
-                    item.custom_id = "recruit:join"
-                elif item.label == "募集主のプロフを見る":
-                    item.custom_id = "recruit:prof"
+        # ※__init__ 内の forループでの custom_id 書き換え処理はトラブルの元なので削除してOKです！
 
-    @ui.button(label="募集主のプロフを見る", style=discord.ButtonStyle.secondary, emoji="📑", custom_id="recruit:join")
+    @ui.button(label="募集主のプロフを見る", style=discord.ButtonStyle.secondary, emoji="📑", custom_id="recruit:view_prof")
     async def view_prof(self, it: discord.Interaction, btn: ui.Button):
         # 🚨 再起動対策：もし author_id が消えていたら、メッセージの埋め込み（Embed）から自動復元する
         author_id = self.author_id
         if author_id is None and it.message.embeds:
             emb = it.message.embeds[0]
-            # user_data に登録されているユーザーの中から、Embedのタイトルに display_name が含まれる人を探す
             for key in profiles.keys():
                 member = it.guild.get_member(int(key))
                 if member and member.display_name in emb.title:
@@ -209,26 +200,17 @@ class RecruitView(ui.View):
         if not author_id:
             return await it.response.send_message("⚠️ システム再起動のため、募集主の特定ができませんでした。", ephemeral=True)
 
-        # データの読み込み
         data = profiles.get(str(author_id))
-        if not data or "gender" not in data: # プロフデータが空、またはactive_trialsのデータしか無い場合を弾く
+        if not data or "gender" not in data: 
             return await it.response.send_message("⚠️ 募集主のプロフが見つかりません。（未登録か、データが壊れています）", ephemeral=True)
         
         member = it.guild.get_member(author_id)
         embed = discord.Embed(title=f"📑 {member.display_name if member else '不明'} さんの取説", color=0x9b59b6)
         
-        # 辞書のキー（data['gender']など）は、保存した時と同じ名前にしてください
-        embed = discord.Embed(title=f"📑 {member.display_name if member else '不明'} さんの取説", color=0x9b59b6)
-        
-        # 1. 基本情報は横並びにしてスッキリさせる
         embed.add_field(name="性別・年齢", value=data['gender'], inline=True)
         embed.add_field(name="主な機種", value=data['platform'], inline=True)
-        
-        # 2. ゲームとスタイルは独立させる
         embed.add_field(name="🎮 主なゲーム", value=data['game'], inline=False)
         embed.add_field(name="🤝 スタイル・頻度", value=data['style'], inline=False)
-        
-        # 3. メッセージは最後に配置
         embed.add_field(name="💬 自己紹介・ひとこと", value=data['intro'], inline=False)
         
         if member:
@@ -236,7 +218,8 @@ class RecruitView(ui.View):
             
         await it.response.send_message(embed=embed, ephemeral=True)
 
-    @ui.button(label="挨拶してみる", style=discord.ButtonStyle.success, emoji="✉️", custom_id="recruit:prof")
+    # ★ここを "recruit:join_room"（ユニークなID）にする
+    @ui.button(label="挨拶してみる", style=discord.ButtonStyle.success, emoji="✉️", custom_id="recruit:join_room")
     async def join_room(self, it: discord.Interaction, btn: ui.Button):
         global room_counter
 
@@ -254,7 +237,7 @@ class RecruitView(ui.View):
 
         await it.response.defer(ephemeral=True)
 
-        # 2. 参加者リストに追加 (1回のみにする)
+        # 2. 参加者リストに追加
         self.joined_users.append(it.user.id) 
         remaining = self.target_num - len(self.joined_users)
         
@@ -279,33 +262,20 @@ class RecruitView(ui.View):
             it.guild.me: discord.PermissionOverwrite(view_channel=True, manage_channels=True)
         }
 
-        # カテゴリを取得
         cat = it.channel.category
-        
-        # 名前を統一する (例: "room-021")
         common_name = f"room-{room_counter:03}"
         
-        # テキストとVCを同じ名前で作成
         txt = await it.guild.create_text_channel(name=common_name, overwrites=overwrites, category=cat)
         vc = await it.guild.create_voice_channel(name=common_name, overwrites=overwrites, category=cat)
 
-        # --- 修正箇所：ログ取得部分 ---
-        # マッチング成立時の送信処理
         recruit_log_ch = it.guild.get_channel(RECRUIT_LOG_CH_ID)
-
         if recruit_log_ch:
             log_embed = discord.Embed(title="🔗 マッチング成立！", color=0x3498db)
-    
-            # ★【ここが重要】募集元のチャンネルではなく、新しく作った txt へのリンクにする
             log_embed.add_field(name="募集部屋", value=f"<#{txt.id}>", inline=True)
-    
-            # 募集主と応募者
             log_embed.add_field(name="募集主", value=f"{it.guild.get_member(self.author_id).mention}", inline=True)
             log_embed.add_field(name="応募者", value=f"{it.user.mention}", inline=True)
-    
             await recruit_log_ch.send(embed=log_embed)
 
-        # 6. ルーム案内
         start_embed = discord.Embed(title="✨ 交流ルームが作成されました！", color=0x3498db)
         await txt.send(content=f"{it.guild.get_member(self.author_id).mention} {it.user.mention}", embed=start_embed, view=RoomControlView(txt.id, vc.id))
 
@@ -323,12 +293,9 @@ class RecruitView(ui.View):
         )
         await txt.send(embed=rule_embed)
 
-        # 8. 最終処理（メッセージ削除 or 完了通知）
         if len(self.joined_users) >= self.target_num:
-            try: 
-                await it.message.delete()
-            except: 
-                pass
+            try: await it.message.delete()
+            except: pass
             await it.followup.send(f"定員に達したため募集を終了しました。部屋: {txt.mention}", ephemeral=True)
         else:
             await it.followup.send(f"専用部屋 {txt.mention} を作成しました！", ephemeral=True)
