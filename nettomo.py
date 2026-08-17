@@ -160,14 +160,19 @@ class AgreeView(ui.View):
         super().__init__(timeout=None) # Bot再起動後も消えないように設定
 
     @ui.button(label="利用規約に同意して参加する", style=discord.ButtonStyle.primary, custom_id="persistent:agree_button")
-    async def agree_btn(self, it: discord.Interaction, btn: ui.Button):
-        # ★あなたのサーバーの「Member」ロールIDに変更してください
+    async def agree_btn(self, it: discord.Interaction, button: ui.Button):
+        # 1. 連打・スパムによるレートリミット（429）を防ぐため、即座にボタンを無効化する
+        button.disabled = True
+        try:
+            await it.message.edit(view=self)
+        except Exception:
+            pass
+
         MEMBER_ROLE_ID = 1507030726736871687
         role = it.guild.get_role(MEMBER_ROLE_ID)
         
         if not role:
-            await it.response.send_message("❌ 設定エラー：指定のロールが見つかりません。", ephemeral=True)
-            return
+            return await it.response.send_message("❌ 設定エラー：指定のロールが見つかりません。", ephemeral=True)
 
         # すでにロールを持っているか確認
         if role in it.user.roles:
@@ -175,7 +180,7 @@ class AgreeView(ui.View):
         else:
             await it.user.add_roles(role)
             await it.response.send_message("✅ 同意が完了しました！チャンネルが解放されます。", ephemeral=True)
-
+            
 class RecruitView(ui.View):
     def __init__(self, author_id: int = 0, target_num: int = 0):
         super().__init__(timeout=None) 
